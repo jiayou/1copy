@@ -90,6 +90,10 @@ void moveDuplicateFiles(vector<Duplication> dup, fs::path src)
     }
 }
 
+void undo_1copy_backup(fs::path oldp, fs::path bak)
+{
+}
+
 void undoMoveDuplicateFiles(fs::path src, fs::path bak)
 {
 	if (!fs::exists(bak)){
@@ -97,9 +101,53 @@ void undoMoveDuplicateFiles(fs::path src, fs::path bak)
 		return;
 	}
 
-	// robocopy /mir /move /njs /njh {bak} {src}
+	vector<MetaInfo> bak_file_list, left_file_list;
+	fs::path oldp, newp;
 
-	spdlog::debug("done!");
+	GetDirectoryContents(bak.c_str(), bak_file_list);
+	spdlog::info("bak: found {} files", bak_file_list.size());
+
+	for(auto& f:bak_file_list){
+		oldp = f.path;
+		wstring ps = oldp.wstring();
+		size_t st = bak.wstring().size();
+		size_t ed = ps.size();
+		newp = src;
+		newp /= ps.substr(st, ed);
+
+		spdlog::debug("RESTORE: {}", ws2s(newp).c_str());
+		if (fs::exists(newp)){
+			spdlog::warn("  EXIST: {}", ws2s(newp).c_str());
+		}
+
+		if (config.dryrun){
+			continue;
+		}
+
+		try{
+			fs::rename(oldp, newp);
+		}
+		catch (const std::exception& e) 
+		{
+			spdlog::error("  ERROR: {}", e.what()) ;
+		}
+	}	
+
+	GetDirectoryContents(bak.c_str(), left_file_list);
+	if (left_file_list.size() > 0){
+		spdlog::info("bak: left {} files", left_file_list.size());
+		return;
+	}
+
+	spdlog::debug("CLEAN: {}", ws2s(bak).c_str());
+	try{
+		std::uintmax_t n = fs::remove_all(bak);
+	}
+	catch (const std::exception& e)
+	{
+		spdlog::error("  ERROR: {}", e.what()) ;
+	}
+
 }
 
 
@@ -116,7 +164,7 @@ int main(int argc, const char **argv)
 		.type("string")
 		.dest("target")
 		.help("destination FOLDER");
-	parser.add_option("-z", "--undo")
+	parser.add_option("-Z", "--undo")
 		.action("store_true")
 		.dest("undo")
 		.set_default(false)
@@ -128,22 +176,20 @@ int main(int argc, const char **argv)
 	parser.add_option("-n", "--dry-run")
 		.action("store_true")
 		.dest("dryrun")
-		.set_default(true)
+		.set_default(false)
 		.help("display, do NOT change anything");
 	parser.add_option("-x", "--exec")
 		.action("store_false")
 		.dest("dryrun")
-		.set_default(false)
+		.set_default(true)
 		.help("execute");
 
 	optparse::Values options = parser.parse_args(argc, argv);
 	vector<string> args = parser.args();
 	fs::path src, dst, bak;
 
-	spdlog::set_level(spdlog::level::warn);
+	spdlog::set_level(spdlog::level::info);
 	int verbose = (int)(options.get("verbose"));
-	if (verbose-- > 0)
-		spdlog::set_level(spdlog::level::info);
 	if (verbose-- > 0)
 		spdlog::set_level(spdlog::level::debug);
 	if (verbose-- > 0)
@@ -156,10 +202,6 @@ int main(int argc, const char **argv)
 	spdlog::debug("UNDO: {}", (bool)(options.get("undo")));
 
 	config.dryrun = (bool)(options.get("dryrun"));
-
-	make_1copy_backup("C:\\Code\\1copy\\test\\a\\b\\c.txt", "C:\\Code\\1copy\\test\\");
-	return 0;
-
 
 	std::string name1 = std::tmpnam(nullptr);
 	spdlog::debug("temporary file name: {}", name1);
@@ -185,26 +227,27 @@ int main(int argc, const char **argv)
 		return 1;
 	}
 	remove_trailing_separator(src);
-	spdlog::info("SRC = {}", ws2s(src).c_str());
+	spdlog::debug("SRC = {}", ws2s(src).c_str());
 	bak = src;
 	bak /= ".1copy";
-	spdlog::info("BAK = {}", ws2s(bak).c_str());
-
-	if (fs::exists(bak) && !config.dryrun)
-	{
-		spdlog::error("1copy already exist in {}, stop.", ws2s(src).c_str());
-		return 1;
-	}
+	spdlog::debug("BAK = {}", ws2s(bak).c_str());
 
 	if ((bool)(options.get("undo")))
 	{
-		spdlog::debug("Undo...");
+		spdlog::debug("UNDO: {}", ws2s(bak).c_str());
 		undoMoveDuplicateFiles(src, bak);
+		spdlog::debug("DONE.");
 		return 0;
 	}
 
+	if (fs::exists(bak) && !config.dryrun)
+	{
+		spdlog::error("STOP! {} already exists.", ws2s(bak).c_str());
+		return 1;
+	}
+
 	string target = (const char *)(options.get("target"));
-	spdlog::info("DST = {}", target.c_str());
+	spdlog::debug("DST = {}", target.c_str());
 
 	if (target.size() > 0)
 	{
@@ -219,15 +262,16 @@ int main(int argc, const char **argv)
 		vector<MetaInfo> src_file_list, dst_file_list;
 
 		GetDirectoryContents(src.c_str(), src_file_list);
-		spdlog::info("src: found {} files", src_file_list.size());
+		spdlog::info("src: found {} files in {}", src_file_list.size(), ws2s(src).c_str());
 
 		GetDirectoryContents(dst.c_str(), dst_file_list);
-		spdlog::info("dst: found {} files", dst_file_list.size());
+		spdlog::info("dst: found {} files in {}", dst_file_list.size(), ws2s(dst).c_str());
 
 		vector<Duplication> dup = findExistingFile(src_file_list, dst_file_list);
 		spdlog::info("found {} duplications", dup.size());
 
-		print_dup_json(dup);
+		// print_dup_json(dup);
+		moveDuplicateFiles(dup, src);
 	}
 	else // dst missing, find duplicate file
 	{
@@ -235,7 +279,7 @@ int main(int argc, const char **argv)
 		vector<MetaInfo> src_file_list;
 		GetDirectoryContents(src.c_str(), src_file_list);
 
-		spdlog::info("found {} files", src_file_list.size());
+		spdlog::info("found {} files in {}", src_file_list.size(), ws2s(src).c_str());
 
 		vector<Duplication> dup = findDuplicateFile(src_file_list);
 		spdlog::info("found {} duplications", dup.size());
@@ -249,9 +293,6 @@ int main(int argc, const char **argv)
 void time_it()
 {
 	clock_t begin = clock();
-
-	string x = getHomePath();
-	cout << x << endl;
 
 	// do something
 
