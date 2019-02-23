@@ -133,19 +133,22 @@ void undoMoveDuplicateFiles(fs::path src, fs::path bak)
 		}
 	}	
 
+	spdlog::info("backup files have been restored.");
+
 	GetDirectoryContents(bak.c_str(), left_file_list);
 	if (left_file_list.size() > 0){
 		spdlog::info("bak: left {} files", left_file_list.size());
 		return;
 	}
 
-	spdlog::debug("CLEAN: {}", ws2s(bak).c_str());
+	spdlog::info("CLEAN: {}", ws2s(bak).c_str());
 	try{
 		std::uintmax_t n = fs::remove_all(bak);
+		spdlog::info("clean done.");
 	}
 	catch (const std::exception& e)
 	{
-		spdlog::error("  ERROR: {}", e.what()) ;
+		spdlog::error("ERROR: {}", e.what()) ;
 	}
 
 }
@@ -272,6 +275,7 @@ int main(int argc, const char **argv)
 
 		// print_dup_json(dup);
 		moveDuplicateFiles(dup, src);
+		spdlog::info("duplicated files have been moved to {}", ws2s(bak).c_str());
 	}
 	else // dst missing, find duplicate file
 	{
