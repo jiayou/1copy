@@ -53,12 +53,62 @@ void print_dup_json(vector<Duplication> dup)
 	cout << "]" << endl;
 }
 
+void remove_trailing_separator(fs::path &p)
+{
+	string ps = p.string();
+	if (!p.empty() && ps.back() == fs::path::preferred_separator){
+		ps.pop_back();
+		p = fs::path(ps);
+	}
+}
+
+void make_1copy_backup(fs::path oldp, fs::path src)
+{
+	remove_trailing_separator(src);
+	string ps = oldp.string();
+	ps.insert(src.string().size(), "\\.1copy");
+	fs::path newp = fs::path(ps);
+	
+	spdlog::debug("1COPY: {}", newp.string().c_str());
+	if (config.dryrun) return;
+	try
+	{
+		fs::create_directories( newp.parent_path() );
+		fs::rename(oldp, newp);
+	}
+	catch (const std::exception& e) 
+	{
+		spdlog::error("1COPY: {}", newp.string().c_str());
+		spdlog::error(" FAIL: {}", e.what());
+	}
+}
+
+void moveDuplicateFiles(vector<Duplication> dup, fs::path src)
+{
+    for (auto &f : dup){
+		make_1copy_backup(f.path, src);
+    }
+}
+
+void undoMoveDuplicateFiles(fs::path src, fs::path bak)
+{
+	if (!fs::exists(bak)){
+		spdlog::warn("Nothing to undo.");
+		return;
+	}
+
+	// robocopy /mir /move /njs /njh {bak} {src}
+
+	spdlog::debug("done!");
+}
+
+
 int main(int argc, const char **argv)
 {
 	setlocale(LC_CTYPE, "");
+	spdlog::set_level(spdlog::level::trace);
 
 	using optparse::OptionParser;
-
 	OptionParser parser = OptionParser().description("just an example");
 
 	parser.add_option("-t", "--target")
@@ -88,8 +138,7 @@ int main(int argc, const char **argv)
 
 	optparse::Values options = parser.parse_args(argc, argv);
 	vector<string> args = parser.args();
-	wstring src;
-	wstring dst;
+	fs::path src, dst, bak;
 
 	spdlog::set_level(spdlog::level::warn);
 	int verbose = (int)(options.get("verbose"));
@@ -107,6 +156,11 @@ int main(int argc, const char **argv)
 	spdlog::debug("UNDO: {}", (bool)(options.get("undo")));
 
 	config.dryrun = (bool)(options.get("dryrun"));
+
+	make_1copy_backup("C:\\Code\\1copy\\test\\a\\b\\c.txt", "C:\\Code\\1copy\\test\\");
+	return 0;
+
+
 	std::string name1 = std::tmpnam(nullptr);
 	spdlog::debug("temporary file name: {}", name1);
 
@@ -122,7 +176,7 @@ int main(int argc, const char **argv)
 	}
 	else
 	{
-		src = s2ws(args[0]);
+		src = fs::path(args[0]);
 	}
 
 	if (!fs::exists(src))
@@ -130,16 +184,22 @@ int main(int argc, const char **argv)
 		spdlog::error("SRC-DIR does not exist: {}", ws2s(src).c_str());
 		return 1;
 	}
-	else
+	remove_trailing_separator(src);
+	spdlog::info("SRC = {}", ws2s(src).c_str());
+	bak = src;
+	bak /= ".1copy";
+	spdlog::info("BAK = {}", ws2s(bak).c_str());
+
+	if (fs::exists(bak) && !config.dryrun)
 	{
-		spdlog::info("SRC = {}", ws2s(src).c_str());
+		spdlog::error("1copy already exist in {}, stop.", ws2s(src).c_str());
+		return 1;
 	}
 
 	if ((bool)(options.get("undo")))
 	{
-		spdlog::info("Undo...");
-		undoMoveDuplicateFiles(src);
-		spdlog::info("done!");
+		spdlog::debug("Undo...");
+		undoMoveDuplicateFiles(src, bak);
 		return 0;
 	}
 
@@ -148,7 +208,9 @@ int main(int argc, const char **argv)
 
 	if (target.size() > 0)
 	{
-		dst = s2ws(target);
+		dst = fs::path(target);
+		remove_trailing_separator(dst);
+
 		if (!fs::exists(dst))
 		{
 			spdlog::error("DST-DIR does not exist: {}", ws2s(dst).c_str());
@@ -196,4 +258,29 @@ void time_it()
 	clock_t end = clock();
 	double elapsed_secs = double(end - begin) / CLOCKS_PER_SEC;
 	cout << "elaspsed time:" << elapsed_secs << endl;
+}
+
+void fs_test()
+{
+	fs::path oldp, newp, root1, root2;
+
+	root1 = "C:\\test\\a";
+	root2 = "C:\\test\\a\\";
+	remove_trailing_separator(root1);
+	remove_trailing_separator(root2);
+
+	wcout << root1 << endl;
+	wcout << root2 << endl;
+
+	oldp = "C:\\test\\a\\b\\c.txt";
+	newp = "C:\\test\\.1copy\\a\\b\\c.txt";
+	wcout << newp.parent_path() << endl;
+	try{
+		fs::create_directories( newp.parent_path() );
+		fs::rename(oldp, newp); 
+	}catch (const std::exception& e) 
+	{
+		 std::cout << e.what();
+	}
+
 }

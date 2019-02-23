@@ -87,94 +87,12 @@ bool GetDirectoryContents(const wchar_t *sDir, vector<MetaInfo> &M)
     return true;
 }
 
-bool ListDirectoryContents(const wchar_t *sDir)
-{
-    WIN32_FIND_DATA fdFile;
-    HANDLE hFind = NULL;
-
-    wchar_t sPath[2048];
-
-    //Specify a file mask. *.* = We want everything!
-    wsprintf(sPath, L"%s\\*.*", sDir);
-
-    if ((hFind = FindFirstFile(sPath, &fdFile)) == INVALID_HANDLE_VALUE)
-    {
-        wprintf(L"Path not found: [%s]\n", sDir);
-        return false;
-    }
-
-    do
-    {
-        //Find first file will always return "."
-        //    and ".." as the first two directories.
-        if (wcscmp(fdFile.cFileName, L".") != 0 && wcscmp(fdFile.cFileName, L"..") != 0)
-        {
-            //Build up our file path using the passed in
-            //  [sDir] and the file/foldername we just found:
-            wsprintf(sPath, L"%s\\%s", sDir, fdFile.cFileName);
-
-            //Is the entity a File or Folder?
-            if (fdFile.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
-            {
-                wprintf(L"Directory: %s\n", sPath);
-                ListDirectoryContents(sPath); //Recursion, I love it!
-            }
-            else
-            {
-                wprintf(L"File: %s\n", sPath);
-            }
-        }
-    } while (FindNextFile(hFind, &fdFile)); //Find the next file.
-
-    FindClose(hFind); //Always, Always, clean things up!
-
-    return true;
-}
-
-vector<wstring> get_all_files_names_within_folder(string folder)
-{
-    vector<wstring> names;
-    string search_path = folder + "/*.*";
-    WIN32_FIND_DATA fd;
-    HANDLE hFind = ::FindFirstFile(s2ws(search_path).c_str(), &fd);
-    if (hFind != INVALID_HANDLE_VALUE)
-    {
-        do
-        {
-            // read all (real) files in current folder
-            // , delete '!' read other 2 default folder . and ..
-            if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
-            {
-                names.push_back(fd.cFileName);
-            }
-        } while (::FindNextFile(hFind, &fd));
-        ::FindClose(hFind);
-    }
-    return names;
-}
-
-void createArray(string dst)
-{
-    for (fs::recursive_directory_iterator i(dst), end; i != end; ++i)
-    {
-        if (!fs::is_directory(i->path()))
-        {
-            cout << i->path() << endl;
-        }
-    }
-}
-
 string getHomePath()
 {
     string drive = std::getenv("HOMEDRIVE");
     string path = std::getenv("HOMEPATH");
 
     return drive + path;
-}
-
-string getOneCopyPath()
-{
-    return getHomePath() + "\\.1copy";
 }
 
 string getDateString()
@@ -189,10 +107,6 @@ string getDateString()
     return string("TIME");
 }
 
-string generateDatabaseName(string dst)
-{
-    return "1copy_" + getDateString() + string(".db");
-}
 
 vector<Duplication> findDuplicateFile(vector<MetaInfo> src_file_list)
 {
@@ -264,37 +178,4 @@ vector<Duplication> findExistingFile(vector<MetaInfo> src_file_list, vector<Meta
         }
     }
     return dup;
-}
-
-extern OneCopyConfig config;
-
-void moveDuplicateFiles(vector<Duplication> dup, wstring root)
-{
-    wstring new_root = root + L"\\.1copy\\";
-    for (auto &f : dup)
-    {
-        wstring src = f.path;
-        wstring dst = src; //.replace(root, new_root);
-
-        if (config.dryrun)
-        {
-            fs::create_directories(fs::path(dst).parent_path());
-            fs::rename(src, dst);
-        }
-        else
-        {
-            wprintf(L"Move %s\n", src.c_str());
-        }
-    }
-}
-
-void undoMoveDuplicateFiles(wstring root)
-{
-}
-
-void Serialization()
-{
-    /* 
-        http://uscilab.github.io/cereal/quickstart.html
-    */
 }
